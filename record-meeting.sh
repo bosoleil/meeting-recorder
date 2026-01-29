@@ -10,8 +10,24 @@ export PATH="/opt/homebrew/bin:/Users/bombin/miniconda3/bin:$PATH"
 # Configuration
 BASE_DIR="/Users/bombin/Local Records/meeting"
 WHISPER_MODEL="mlx-community/whisper-large-v3-turbo"  # Fast & accurate on Apple Silicon
-AUDIO_DEVICE="2"      # MacBook Pro Microphone (change to 0 for BoomAudio, 1 for 💪 Microphone)
 LANGUAGE="en"         # Change if you speak another language
+
+# Auto-detect best audio device (BlackHole > MacBook Pro Microphone)
+get_audio_device() {
+    local devices=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1)
+
+    # Prefer BlackHole for system audio capture (best quality)
+    if echo "$devices" | grep -q "BlackHole"; then
+        local blackhole_id=$(echo "$devices" | grep "BlackHole" | head -1 | sed 's/.*\[\([0-9]*\)\].*/\1/')
+        echo "$blackhole_id"
+        return
+    fi
+
+    # Fallback to MacBook Pro Microphone
+    echo "2"
+}
+
+AUDIO_DEVICE=$(get_audio_device)
 
 # Colors for output
 RED='\033[0;31m'
@@ -131,11 +147,15 @@ start_recording() {
 
     AUDIO_FILE="${RECORDING_DIR}/audio.wav"
 
+    # Get audio device name for display
+    local device_name=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "\[$AUDIO_DEVICE\]" | grep "audio" | sed 's/.*\] //')
+
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}🎙️  Starting Recording${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "Meeting: ${YELLOW}${MEETING_NAME}${NC}"
     echo -e "Date: ${DATE}"
+    echo -e "Audio: ${YELLOW}${device_name:-Device $AUDIO_DEVICE}${NC}"
     echo -e "Saving to: ${RECORDING_DIR}"
     echo ""
     echo -e "${YELLOW}Press Ctrl+C or run '$0 stop' to stop recording${NC}"
@@ -210,6 +230,13 @@ transcribe_audio() {
     local mean_vol=$(ffmpeg -i "$audio" -af "volumedetect" -f null /dev/null 2>&1 | grep "mean_volume" | awk '{print $5}')
     echo -e "Audio mean volume: ${mean_vol} dB"
 
+    # Warn if audio is too quiet (likely microphone not capturing speakers well)
+    local vol_num=${mean_vol%.*}
+    if [[ "$vol_num" -lt -25 ]]; then
+        echo -e "${RED}⚠ Audio is very quiet (${mean_vol} dB). Transcription may be poor.${NC}"
+        echo -e "${YELLOW}Tip: Set up BlackHole for system audio capture - see README${NC}"
+    fi
+
     # Normalize audio for better transcription
     echo -e "${YELLOW}Normalizing audio...${NC}"
     ffmpeg -y -i "$audio" -af "loudnorm=I=-16:TP=-1.5:LRA=11" -ar 16000 -ac 1 "$normalized_audio" -loglevel quiet
@@ -283,6 +310,14 @@ status() {
         echo -e "${GREEN}✓ Zoom is running${NC}"
     else
         echo -e "${YELLOW}○ Zoom is not running${NC}"
+    fi
+
+    # Show audio device
+    local device_name=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "\[$AUDIO_DEVICE\]" | grep "audio" | sed 's/.*\] //')
+    if [[ "$device_name" == *"BlackHole"* ]]; then
+        echo -e "${GREEN}✓ Audio: $device_name (system audio capture)${NC}"
+    else
+        echo -e "${YELLOW}○ Audio: ${device_name:-Device $AUDIO_DEVICE} (mic only - set up BlackHole for better quality)${NC}"
     fi
 }
 

@@ -78,8 +78,34 @@ Edit `record-meeting.sh` to customize:
 |---------|-------------|
 | `BASE_DIR` | Where to save recordings |
 | `WHISPER_MODEL` | MLX Whisper model to use |
-| `AUDIO_DEVICE` | Microphone device number |
 | `LANGUAGE` | Language for transcription |
+
+## Recommended: System Audio Capture with BlackHole
+
+For reliable transcription, capture system audio directly instead of using your microphone:
+
+### Setup BlackHole
+
+1. Install BlackHole:
+   ```bash
+   brew install blackhole-2ch
+   ```
+
+2. **Reboot your Mac** (required for the audio driver to load)
+
+3. Create a Multi-Output Device:
+   - Open **Audio MIDI Setup** (Spotlight → "Audio MIDI Setup")
+   - Click **+** → **Create Multi-Output Device**
+   - Check both **MacBook Pro Speakers** and **BlackHole 2ch**
+   - Rename to "Meeting Audio"
+
+4. Use "Meeting Audio" as your sound output:
+   - System Settings → Sound → Output → "Meeting Audio"
+
+The script will automatically detect BlackHole and use it for recording. Check with:
+```bash
+./record-meeting.sh status
+```
 
 ## License
 
