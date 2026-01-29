@@ -200,22 +200,47 @@ stop_recording() {
 transcribe_audio() {
     local audio="$1"
     local output_dir="$2"
+    local normalized_audio="$output_dir/audio_normalized.wav"
 
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${GREEN}📝 Transcribing with MLX Whisper (GPU accelerated)...${NC}"
+    echo -e "${GREEN}📝 Preparing audio for transcription...${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # Check audio volume level
+    local mean_vol=$(ffmpeg -i "$audio" -af "volumedetect" -f null /dev/null 2>&1 | grep "mean_volume" | awk '{print $5}')
+    echo -e "Audio mean volume: ${mean_vol} dB"
+
+    # Normalize audio for better transcription
+    echo -e "${YELLOW}Normalizing audio...${NC}"
+    ffmpeg -y -i "$audio" -af "loudnorm=I=-16:TP=-1.5:LRA=11" -ar 16000 -ac 1 "$normalized_audio" -loglevel quiet
+
+    if [[ ! -f "$normalized_audio" ]]; then
+        echo -e "${YELLOW}Normalization failed, using original audio${NC}"
+        normalized_audio="$audio"
+    fi
+
+    echo -e "${GREEN}📝 Transcribing with MLX Whisper (GPU accelerated)...${NC}"
     echo -e "${YELLOW}This should only take a few minutes...${NC}"
     echo ""
 
-    mlx_whisper "$audio" \
+    mlx_whisper "$normalized_audio" \
         --model "$WHISPER_MODEL" \
         --language "$LANGUAGE" \
         --output-dir "$output_dir" \
         --output-format all \
         --verbose False \
         --condition-on-previous-text False \
-        --hallucination-silence-threshold 1 \
         --no-speech-threshold 0.6
+
+    # Rename normalized output to match expected filename
+    if [[ -f "$output_dir/audio_normalized.txt" ]]; then
+        mv "$output_dir/audio_normalized.txt" "$output_dir/audio.txt"
+        mv "$output_dir/audio_normalized.srt" "$output_dir/audio.srt" 2>/dev/null
+        mv "$output_dir/audio_normalized.vtt" "$output_dir/audio.vtt" 2>/dev/null
+        mv "$output_dir/audio_normalized.json" "$output_dir/audio.json" 2>/dev/null
+        mv "$output_dir/audio_normalized.tsv" "$output_dir/audio.tsv" 2>/dev/null
+        rm -f "$normalized_audio"  # Clean up normalized audio
+    fi
 
     if [[ $? -eq 0 ]]; then
         echo ""
