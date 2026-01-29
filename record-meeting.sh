@@ -148,7 +148,7 @@ start_recording() {
     AUDIO_FILE="${RECORDING_DIR}/audio.wav"
 
     # Get audio device name for display
-    local device_name=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "\[$AUDIO_DEVICE\]" | grep "audio" | sed 's/.*\] //')
+    local device_name=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep -A100 "audio devices:" | grep "\[$AUDIO_DEVICE\]" | sed 's/.*\] //')
 
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}🎙️  Starting Recording${NC}"
@@ -313,7 +313,7 @@ status() {
     fi
 
     # Show audio device
-    local device_name=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep "\[$AUDIO_DEVICE\]" | grep "audio" | sed 's/.*\] //')
+    local device_name=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep -A100 "audio devices:" | grep "\[$AUDIO_DEVICE\]" | sed 's/.*\] //')
     if [[ "$device_name" == *"BlackHole"* ]]; then
         echo -e "${GREEN}✓ Audio: $device_name (system audio capture)${NC}"
     else
