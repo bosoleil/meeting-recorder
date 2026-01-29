@@ -4,6 +4,9 @@
 # Automatically starts/stops recording when Zoom meetings begin/end
 #
 
+# Ensure PATH includes Homebrew and Miniconda (for LaunchAgent compatibility)
+export PATH="/opt/homebrew/bin:/Users/bombin/miniconda3/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 RECORDER="$SCRIPT_DIR/record-meeting.sh"
 CHECK_INTERVAL=5  # seconds
