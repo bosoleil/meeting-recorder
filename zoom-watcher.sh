@@ -36,17 +36,17 @@ notify "Meeting Recorder" "Watcher is now active"
 was_in_meeting=false
 
 is_in_meeting() {
-    # Method 1: Check for CptHost (Zoom's meeting process)
+    # First check: Zoom must be running
+    if ! pgrep -x "zoom.us" > /dev/null 2>&1; then
+        return 1
+    fi
+
+    # Method 1: Check for CptHost (Zoom's meeting process) - only valid if Zoom is running
     if pgrep -f "CptHost" > /dev/null 2>&1; then
         return 0
     fi
 
-    # Method 2: Check for zoom meeting audio process
-    if pgrep -f "zoom.*Meeting" > /dev/null 2>&1; then
-        return 0
-    fi
-
-    # Method 3: Check Zoom window names (may need accessibility permissions)
+    # Method 2: Check Zoom window names for meeting indicators
     local zoom_windows=$(osascript -e 'tell application "System Events"
         if exists (process "zoom.us") then
             tell process "zoom.us"
