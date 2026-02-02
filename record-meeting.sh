@@ -12,22 +12,29 @@ BASE_DIR="/Users/bombin/Local Records/meeting"
 WHISPER_MODEL="mlx-community/whisper-large-v3-turbo"  # Fast & accurate on Apple Silicon
 LANGUAGE="en"         # Change if you speak another language
 
-# Auto-detect best audio device (BlackHole > MacBook Pro Microphone)
-get_audio_device() {
+# Auto-detect audio devices
+get_audio_devices() {
     local devices=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1)
 
-    # Prefer BlackHole for system audio capture (best quality)
+    # Find BlackHole for system audio capture
+    BLACKHOLE_DEVICE=""
     if echo "$devices" | grep -q "BlackHole"; then
-        local blackhole_id=$(echo "$devices" | grep "BlackHole" | head -1 | sed 's/.*\[\([0-9]*\)\].*/\1/')
-        echo "$blackhole_id"
-        return
+        BLACKHOLE_DEVICE=$(echo "$devices" | grep "BlackHole" | head -1 | sed 's/.*\[\([0-9]*\)\].*/\1/')
     fi
 
-    # Fallback to MacBook Pro Microphone
-    echo "2"
+    # Find MacBook Pro Microphone for user's voice
+    MIC_DEVICE=""
+    if echo "$devices" | grep -q "MacBook Pro Microphone"; then
+        MIC_DEVICE=$(echo "$devices" | grep "MacBook Pro Microphone" | head -1 | sed 's/.*\[\([0-9]*\)\].*/\1/')
+    fi
+
+    # Fallback to any mic if MacBook Pro Mic not found
+    if [[ -z "$MIC_DEVICE" ]]; then
+        MIC_DEVICE=$(echo "$devices" | grep -i "microphone" | head -1 | sed 's/.*\[\([0-9]*\)\].*/\1/')
+    fi
 }
 
-AUDIO_DEVICE=$(get_audio_device)
+get_audio_devices
 
 # Colors for output
 RED='\033[0;31m'
@@ -147,26 +154,39 @@ start_recording() {
 
     AUDIO_FILE="${RECORDING_DIR}/audio.wav"
 
-    # Get audio device name for display
-    local device_name=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep -A100 "audio devices:" | grep "\[$AUDIO_DEVICE\]" | sed 's/.*\] //')
-
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}🎙️  Starting Recording${NC}"
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "Meeting: ${YELLOW}${MEETING_NAME}${NC}"
     echo -e "Date: ${DATE}"
-    echo -e "Audio: ${YELLOW}${device_name:-Device $AUDIO_DEVICE}${NC}"
-    echo -e "Saving to: ${RECORDING_DIR}"
-    echo ""
-    echo -e "${YELLOW}Press Ctrl+C or run '$0 stop' to stop recording${NC}"
-    echo ""
 
     # Start recording in background
-    # Use 48kHz stereo for BlackHole (native format), 16kHz mono for mic
-    if [[ "$device_name" == *"BlackHole"* ]]; then
-        ffmpeg -f avfoundation -i ":${AUDIO_DEVICE}" -acodec pcm_s16le -ar 48000 -ac 2 "$AUDIO_FILE" -y -loglevel quiet &
+    if [[ -n "$BLACKHOLE_DEVICE" ]] && [[ -n "$MIC_DEVICE" ]]; then
+        # Record BOTH system audio (BlackHole) AND microphone, mix them together
+        echo -e "Audio: ${GREEN}BlackHole + Microphone (full meeting capture)${NC}"
+        echo -e "Saving to: ${RECORDING_DIR}"
+        echo ""
+        echo -e "${YELLOW}Press Ctrl+C or run '$0 stop' to stop recording${NC}"
+        echo ""
+        ffmpeg -f avfoundation -i ":${BLACKHOLE_DEVICE}" -f avfoundation -i ":${MIC_DEVICE}" \
+            -filter_complex "[0:a][1:a]amix=inputs=2:duration=longest[aout]" -map "[aout]" \
+            -acodec pcm_s16le -ar 48000 -ac 2 "$AUDIO_FILE" -y -loglevel quiet &
+    elif [[ -n "$BLACKHOLE_DEVICE" ]]; then
+        # BlackHole only (system audio)
+        echo -e "Audio: ${YELLOW}BlackHole only (no mic)${NC}"
+        echo -e "Saving to: ${RECORDING_DIR}"
+        echo ""
+        echo -e "${YELLOW}Press Ctrl+C or run '$0 stop' to stop recording${NC}"
+        echo ""
+        ffmpeg -f avfoundation -i ":${BLACKHOLE_DEVICE}" -acodec pcm_s16le -ar 48000 -ac 2 "$AUDIO_FILE" -y -loglevel quiet &
     else
-        ffmpeg -f avfoundation -i ":${AUDIO_DEVICE}" -acodec pcm_s16le -ar 16000 -ac 1 "$AUDIO_FILE" -y -loglevel quiet &
+        # Microphone only (fallback)
+        echo -e "Audio: ${YELLOW}Microphone only (no BlackHole)${NC}"
+        echo -e "Saving to: ${RECORDING_DIR}"
+        echo ""
+        echo -e "${YELLOW}Press Ctrl+C or run '$0 stop' to stop recording${NC}"
+        echo ""
+        ffmpeg -f avfoundation -i ":${MIC_DEVICE:-2}" -acodec pcm_s16le -ar 16000 -ac 1 "$AUDIO_FILE" -y -loglevel quiet &
     fi
     FFMPEG_PID=$!
 
@@ -317,12 +337,13 @@ status() {
         echo -e "${YELLOW}○ Zoom is not running${NC}"
     fi
 
-    # Show audio device
-    local device_name=$(ffmpeg -f avfoundation -list_devices true -i "" 2>&1 | grep -A100 "audio devices:" | grep "\[$AUDIO_DEVICE\]" | sed 's/.*\] //')
-    if [[ "$device_name" == *"BlackHole"* ]]; then
-        echo -e "${GREEN}✓ Audio: $device_name (system audio capture)${NC}"
+    # Show audio devices
+    if [[ -n "$BLACKHOLE_DEVICE" ]] && [[ -n "$MIC_DEVICE" ]]; then
+        echo -e "${GREEN}✓ Audio: BlackHole + Microphone (full capture)${NC}"
+    elif [[ -n "$BLACKHOLE_DEVICE" ]]; then
+        echo -e "${YELLOW}○ Audio: BlackHole only (no mic - won't capture your voice)${NC}"
     else
-        echo -e "${YELLOW}○ Audio: ${device_name:-Device $AUDIO_DEVICE} (mic only - set up BlackHole for better quality)${NC}"
+        echo -e "${YELLOW}○ Audio: Microphone only (set up BlackHole for system audio)${NC}"
     fi
 }
 
