@@ -162,7 +162,12 @@ start_recording() {
     echo ""
 
     # Start recording in background
-    ffmpeg -f avfoundation -i ":${AUDIO_DEVICE}" -acodec pcm_s16le -ar 16000 -ac 1 "$AUDIO_FILE" -y -loglevel quiet &
+    # Use 48kHz stereo for BlackHole (native format), 16kHz mono for mic
+    if [[ "$device_name" == *"BlackHole"* ]]; then
+        ffmpeg -f avfoundation -i ":${AUDIO_DEVICE}" -acodec pcm_s16le -ar 48000 -ac 2 "$AUDIO_FILE" -y -loglevel quiet &
+    else
+        ffmpeg -f avfoundation -i ":${AUDIO_DEVICE}" -acodec pcm_s16le -ar 16000 -ac 1 "$AUDIO_FILE" -y -loglevel quiet &
+    fi
     FFMPEG_PID=$!
 
     # Save state
