@@ -7,6 +7,17 @@
 # Ensure PATH includes Homebrew and Miniconda (for LaunchAgent compatibility)
 export PATH="/opt/homebrew/bin:/Users/bombin/miniconda3/bin:$PATH"
 
+# Auto-switch to Multi-Output Device for proper audio capture
+ensure_multi_output_device() {
+    local current=$(SwitchAudioSource -c 2>/dev/null)
+    if [[ "$current" != "Multi-Output Device" ]]; then
+        SwitchAudioSource -s "Multi-Output Device" 2>/dev/null
+        if [[ $? -eq 0 ]]; then
+            echo -e "${GREEN}✓ Switched to Multi-Output Device${NC}"
+        fi
+    fi
+}
+
 # Configuration
 BASE_DIR="/Users/bombin/Local Records/meeting"
 WHISPER_MODEL="mlx-community/whisper-large-v3-turbo"  # Fast & accurate on Apple Silicon
@@ -153,6 +164,9 @@ start_recording() {
     mkdir -p "$RECORDING_DIR"
 
     AUDIO_FILE="${RECORDING_DIR}/audio.wav"
+
+    # Ensure Multi-Output Device is selected for BlackHole to receive audio
+    ensure_multi_output_device
 
     echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo -e "${GREEN}🎙️  Starting Recording${NC}"
