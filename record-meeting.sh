@@ -161,6 +161,7 @@ start_recording() {
     echo -e "Date: ${DATE}"
 
     # Start recording in background
+    # Boost BlackHole by 20dB to compensate for low system volume
     if [[ -n "$BLACKHOLE_DEVICE" ]] && [[ -n "$MIC_DEVICE" ]]; then
         # Record BOTH system audio (BlackHole) AND microphone, mix them together
         echo -e "Audio: ${GREEN}BlackHole + Microphone (full meeting capture)${NC}"
@@ -169,16 +170,16 @@ start_recording() {
         echo -e "${YELLOW}Press Ctrl+C or run '$0 stop' to stop recording${NC}"
         echo ""
         ffmpeg -f avfoundation -i ":${BLACKHOLE_DEVICE}" -f avfoundation -i ":${MIC_DEVICE}" \
-            -filter_complex "[0:a][1:a]amix=inputs=2:duration=longest[aout]" -map "[aout]" \
+            -filter_complex "[0:a]volume=20dB[a0];[1:a]volume=10dB[a1];[a0][a1]amix=inputs=2:duration=longest[aout]" -map "[aout]" \
             -acodec pcm_s16le -ar 48000 -ac 2 "$AUDIO_FILE" -y -loglevel quiet &
     elif [[ -n "$BLACKHOLE_DEVICE" ]]; then
-        # BlackHole only (system audio)
+        # BlackHole only (system audio) - boost by 20dB
         echo -e "Audio: ${YELLOW}BlackHole only (no mic)${NC}"
         echo -e "Saving to: ${RECORDING_DIR}"
         echo ""
         echo -e "${YELLOW}Press Ctrl+C or run '$0 stop' to stop recording${NC}"
         echo ""
-        ffmpeg -f avfoundation -i ":${BLACKHOLE_DEVICE}" -acodec pcm_s16le -ar 48000 -ac 2 "$AUDIO_FILE" -y -loglevel quiet &
+        ffmpeg -f avfoundation -i ":${BLACKHOLE_DEVICE}" -af "volume=20dB" -acodec pcm_s16le -ar 48000 -ac 2 "$AUDIO_FILE" -y -loglevel quiet &
     else
         # Microphone only (fallback)
         echo -e "Audio: ${YELLOW}Microphone only (no BlackHole)${NC}"
