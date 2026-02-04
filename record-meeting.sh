@@ -302,12 +302,7 @@ transcribe_audio() {
     echo ""
 
     # Use whisper.cpp with anti-hallucination settings
-    # -np: no-prints (cleaner output)
-    # -ml: max segment length (prevents long hallucination runs)
-    # -sow: split on word (better segmentation)
-    # -su: speed up (2x faster without quality loss)
-    # -et: entropy threshold (detect hallucinations)
-    whisper-cpp \
+    whisper-cli \
         -m "$WHISPER_MODEL" \
         -l "$LANGUAGE" \
         -f "$normalized_audio" \
@@ -315,8 +310,6 @@ transcribe_audio() {
         -of "$output_dir/audio" \
         -ml 50 \
         -et 2.4 \
-        -lpt 0.0 \
-        --no-timestamps \
         2>&1 | grep -v "^whisper"
 
     # Rename files if needed (whisper.cpp outputs to audio.txt, audio.srt, etc.)
