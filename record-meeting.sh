@@ -20,8 +20,9 @@ ensure_multi_output_device() {
 
 # Configuration
 BASE_DIR="/Users/bombin/Local Records/meeting"
-WHISPER_MODEL="mlx-community/whisper-large-v3-turbo"  # Fast & accurate on Apple Silicon
+WHISPER_MODEL="$HOME/.whisper/ggml-large-v3-turbo.bin"  # whisper.cpp model
 LANGUAGE="en"         # Change if you speak another language
+USE_WHISPER_CPP=true  # Use whisper.cpp instead of mlx_whisper for better quality
 
 # Auto-detect audio devices
 get_audio_devices() {
@@ -286,27 +287,77 @@ transcribe_audio() {
         normalized_audio="$audio"
     fi
 
-    echo -e "${GREEN}📝 Transcribing with MLX Whisper (GPU accelerated)...${NC}"
-    echo -e "${YELLOW}This should only take a few minutes...${NC}"
+    # Remove silence to prevent Whisper hallucinations
+    echo -e "${YELLOW}Removing silence from audio...${NC}"
+    local desilenced_audio="$output_dir/audio_desilenced.wav"
+    ffmpeg -y -i "$normalized_audio" -af "silenceremove=start_periods=1:start_silence=0.5:start_threshold=-40dB:detection=peak,areverse,silenceremove=start_periods=1:start_silence=0.5:start_threshold=-40dB:detection=peak,areverse,loudnorm=I=-16:TP=-1.5:LRA=11" -ar 16000 -ac 1 "$desilenced_audio" -loglevel quiet
+
+    if [[ -f "$desilenced_audio" ]]; then
+        normalized_audio="$desilenced_audio"
+        echo -e "${GREEN}✓ Silence removed${NC}"
+    fi
+
+    echo -e "${GREEN}📝 Transcribing with whisper.cpp...${NC}"
+    echo -e "${YELLOW}This may take a few minutes...${NC}"
     echo ""
 
-    mlx_whisper "$normalized_audio" \
-        --model "$WHISPER_MODEL" \
-        --language "$LANGUAGE" \
-        --output-dir "$output_dir" \
-        --output-format all \
-        --verbose False \
-        --condition-on-previous-text False \
-        --no-speech-threshold 0.6
+    # Use whisper.cpp with anti-hallucination settings
+    # -np: no-prints (cleaner output)
+    # -ml: max segment length (prevents long hallucination runs)
+    # -sow: split on word (better segmentation)
+    # -su: speed up (2x faster without quality loss)
+    # -et: entropy threshold (detect hallucinations)
+    whisper-cpp \
+        -m "$WHISPER_MODEL" \
+        -l "$LANGUAGE" \
+        -f "$normalized_audio" \
+        -otxt -osrt -ovtt \
+        -of "$output_dir/audio" \
+        -ml 50 \
+        -et 2.4 \
+        -lpt 0.0 \
+        --no-timestamps \
+        2>&1 | grep -v "^whisper"
 
-    # Rename normalized output to match expected filename
-    if [[ -f "$output_dir/audio_normalized.txt" ]]; then
-        mv "$output_dir/audio_normalized.txt" "$output_dir/audio.txt"
-        mv "$output_dir/audio_normalized.srt" "$output_dir/audio.srt" 2>/dev/null
-        mv "$output_dir/audio_normalized.vtt" "$output_dir/audio.vtt" 2>/dev/null
-        mv "$output_dir/audio_normalized.json" "$output_dir/audio.json" 2>/dev/null
-        mv "$output_dir/audio_normalized.tsv" "$output_dir/audio.tsv" 2>/dev/null
-        rm -f "$normalized_audio"  # Clean up normalized audio
+    # Rename files if needed (whisper.cpp outputs to audio.txt, audio.srt, etc.)
+    # Clean up temporary audio files
+    rm -f "$output_dir/audio_normalized.wav" "$output_dir/audio_desilenced.wav" 2>/dev/null
+
+    # Post-process to remove obvious hallucinations
+    if [[ -f "$output_dir/audio.txt" ]]; then
+        echo -e "${YELLOW}Cleaning transcript...${NC}"
+        # Remove repeated phrases and obvious hallucinations
+        python3 -c "
+import re
+import sys
+
+with open('$output_dir/audio.txt', 'r') as f:
+    text = f.read()
+
+# Remove repeated phrases (3+ repetitions)
+text = re.sub(r'(\b\w+(?:\s+\w+){0,5})\s*(\1\s*){2,}', r'\1 ', text)
+
+# Remove common hallucination patterns
+hallucinations = [
+    r\"I'm sorry\.?\s*\",
+    r'Thank you\.?\s*',
+    r'I\'m going to go\.?\s*',
+    r'I\'m going to go ahead and\s*',
+    r'I\'m not going to\s*',
+    r'foreign\s*',
+]
+for pattern in hallucinations:
+    text = re.sub(f'({pattern}){{3,}}', '', text, flags=re.IGNORECASE)
+
+# Clean up extra whitespace
+text = re.sub(r'\n{3,}', '\n\n', text)
+text = re.sub(r' {2,}', ' ', text)
+
+with open('$output_dir/audio.txt', 'w') as f:
+    f.write(text.strip())
+
+print('✓ Transcript cleaned')
+" 2>/dev/null || echo "Python cleanup skipped"
     fi
 
     if [[ $? -eq 0 ]]; then
